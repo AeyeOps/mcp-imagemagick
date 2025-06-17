@@ -1,0 +1,37 @@
+[package]
+name = "mcp-imagemagick"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "MCP server for image conversion using ImageMagick and darktable"
+license = "MIT"
+repository = "https://github.com/yourusername/mcp-imagemagick"
+keywords = ["mcp", "imagemagick", "darktable", "image-conversion", "webp"]
+categories = ["command-line-utilities", "multimedia::images"]
+
+[dependencies]
+# MCP implementation
+mcpr = "0.2.3"
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+which = "7.0"
+tempfile = "3.14"
+async-trait = "0.1"
+
+# Path handling
+pathdiff = "0.2"

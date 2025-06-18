@@ -1,5 +1,7 @@
 # mcp-imagemagick
 
+![MCP ImageMagick Server](imagemagick-mcp-github.png)
+
 An MCP (Model Context Protocol) server for image conversion using ImageMagick and darktable.
 
 ## Overview

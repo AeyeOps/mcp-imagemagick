@@ -155,4 +155,68 @@ impl ImageHandler {
             }
         })
     }
+    
+    pub async fn handle_tool_call(&self, name: &str, arguments: Value) -> Result<Value> {
+        match name {
+            "convert_dng_to_webp" => {
+                let args: ConvertDngToWebpArgs = serde_json::from_value(arguments)
+                    .map_err(|e| McpImageError::Mcp(format!("Invalid params: {}", e)))?;
+                
+                let result = self.convert_dng_to_webp(args).await?;
+                
+                // Extract the message from the result
+                let message = if let Some(msg) = result.get("message").and_then(|m| m.as_str()) {
+                    msg.to_string()
+                } else {
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| "Conversion completed".to_string())
+                };
+                
+                // Return in MCP content array format
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": message
+                    }]
+                }))
+            }
+            "check_converters" => {
+                let args: CheckConvertersArgs = serde_json::from_value(arguments)
+                    .map_err(|e| McpImageError::Mcp(format!("Invalid params: {}", e)))?;
+                
+                let result = self.check_converters(args).await?;
+                
+                // Format the result as readable text
+                let mut text = String::new();
+                if let Some(converters) = result.get("converters").and_then(|c| c.as_array()) {
+                    text.push_str("Available converters:\n");
+                    for converter in converters {
+                        if let (Some(name), Some(available)) = (
+                            converter.get("name").and_then(|n| n.as_str()),
+                            converter.get("available").and_then(|a| a.as_bool())
+                        ) {
+                            text.push_str(&format!("- {}: {}\n", name, if available { "Available" } else { "Not available" }));
+                        }
+                    }
+                    
+                    if let Some(count) = result.get("available_count").and_then(|c| c.as_u64()) {
+                        text.push_str(&format!("\nTotal available: {}", count));
+                    }
+                } else {
+                    text = serde_json::to_string_pretty(&result).unwrap_or_else(|_| "Check completed".to_string());
+                }
+                
+                // Return in MCP content array format
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": text
+                    }]
+                }))
+            }
+            _ => Err(McpImageError::Mcp(format!(
+                "Unknown tool: {}",
+                name
+            )))
+        }
+    }
 }

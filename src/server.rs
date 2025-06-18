@@ -16,7 +16,7 @@ impl McpImageServer {
     }
     
     pub async fn run(self) -> Result<()> {
-        // Initialize logging
+        // Initialize logging to stderr only
         tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
@@ -27,15 +27,45 @@ impl McpImageServer {
         
         tracing::info!("Starting MCP Image Server");
         
-        // Set up transport
-        let (mut transport, stdout_rx, stdin_tx) = StdioTransport::new();
-        StdioTransport::start_stdin_reader(stdin_tx);
-        StdioTransport::start_stdout_writer(stdout_rx);
-        
-        // Main message loop
-        while let Some(message) = transport.recv().await {
-            let response = self.handle_message(message).await;
-            transport.send(response).await?;
+        // Main message loop - synchronous
+        loop {
+            match StdioTransport::read_message() {
+                Some(message) => {
+                    if message.is_null() {
+                        // Empty line, skip
+                        tracing::debug!("Received empty line, skipping");
+                        continue;
+                    }
+                    
+                    // Log incoming message (debug level)
+                    tracing::debug!("Received message: {}", message);
+                    
+                    // Check if this is already an error response from transport
+                    if message.get("error").is_some() && message.get("jsonrpc").is_some() {
+                        // Write the error response directly
+                        if let Err(e) = StdioTransport::write_message(&message) {
+                            tracing::error!("Failed to write error response: {}", e);
+                            // Continue processing - don't break the connection
+                        }
+                        continue;
+                    }
+                    
+                    let response = self.handle_message(message).await;
+                    
+                    // Log outgoing response (debug level)
+                    tracing::debug!("Sending response: {}", response);
+                    
+                    if let Err(e) = StdioTransport::write_message(&response) {
+                        tracing::error!("Failed to write response: {}", e);
+                        // Continue processing - don't break the connection
+                    }
+                }
+                None => {
+                    // EOF or error, exit gracefully
+                    tracing::info!("Server shutting down (EOF or read error)");
+                    break;
+                }
+            }
         }
         
         Ok(())
@@ -47,19 +77,62 @@ impl McpImageServer {
         let method = message.get("method").and_then(|m| m.as_str());
         let params = message.get("params").cloned().unwrap_or(json!({}));
         
+        // Validate JSON-RPC 2.0
+        if message.get("jsonrpc").and_then(|v| v.as_str()) != Some("2.0") {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request",
+                    "data": "Missing or invalid jsonrpc version"
+                }
+            });
+        }
+        
+        // ID must be present and not null
+        if id.is_none() || id == Some(Value::Null) {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request",
+                    "data": "Missing or null id"
+                }
+            });
+        }
+        
         let result = match method {
-            Some("initialize") => self.handle_initialize(params).await,
-            Some("tools/list") => self.handle_tools_list().await,
-            Some("tools/call") => self.handle_tool_call(params).await,
-            _ => Err(McpImageError::Mcp(format!(
-                "Unknown method: {:?}",
-                method
-            ))),
+            Some("initialize") => {
+                tracing::info!("Handling initialize request");
+                self.handle_initialize(params).await
+            }
+            Some("tools/list") => {
+                tracing::info!("Handling tools/list request");
+                self.handle_tools_list().await
+            }
+            Some("tools/call") => {
+                tracing::info!("Handling tools/call request");
+                self.handle_tool_call(params).await
+            }
+            Some(m) => {
+                tracing::warn!("Unknown method requested: {}", m);
+                Err(McpImageError::Mcp(format!(
+                    "Method not found: {}",
+                    m
+                )))
+            }
+            None => {
+                tracing::warn!("Request missing method field");
+                Err(McpImageError::Mcp("Missing method".to_string()))
+            }
         };
         
         // Build JSON-RPC response
         match result {
             Ok(result) => {
+                tracing::debug!("Request succeeded");
                 json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -67,12 +140,24 @@ impl McpImageServer {
                 })
             }
             Err(e) => {
+                tracing::error!("Request failed: {}", e);
+                let (code, message) = match &e {
+                    McpImageError::Mcp(msg) if msg.contains("Method not found") => {
+                        (-32601, "Method not found")
+                    }
+                    McpImageError::Mcp(msg) if msg.contains("Invalid params") => {
+                        (-32602, "Invalid params")
+                    }
+                    _ => (-32603, "Internal error")
+                };
+                
                 json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "error": {
-                        "code": -32603,
-                        "message": e.to_string()
+                        "code": code,
+                        "message": message,
+                        "data": e.to_string()
                     }
                 })
             }
@@ -80,14 +165,15 @@ impl McpImageServer {
     }
     
     async fn handle_initialize(&self, _params: Value) -> Result<Value> {
+        // Return capabilities according to spec
         Ok(json!({
-            "protocolVersion": "2024-11-01",
+            "protocolVersion": "2024-11-05",
             "capabilities": {
                 "tools": {}
             },
             "serverInfo": {
-                "name": "mcp-imagemagick",
-                "version": "0.1.0"
+                "name": env!("CARGO_PKG_NAME"),
+                "version": env!("CARGO_PKG_VERSION")
             }
         }))
     }
@@ -102,25 +188,31 @@ impl McpImageServer {
     }
     
     async fn handle_tool_call(&self, params: Value) -> Result<Value> {
-        let tool_name = params.get("name")
+        let name = params.get("name")
             .and_then(|n| n.as_str())
-            .ok_or_else(|| McpImageError::InvalidInput("Missing tool name".to_string()))?;
+            .ok_or_else(|| {
+                tracing::error!("tools/call missing 'name' parameter");
+                McpImageError::Mcp("Invalid params: missing tool name".to_string())
+            })?;
         
-        let args = params.get("arguments").cloned().unwrap_or(json!({}));
+        let arguments = params.get("arguments")
+            .cloned()
+            .unwrap_or_else(|| {
+                tracing::debug!("tools/call missing 'arguments', using empty object");
+                json!({})
+            });
         
-        match tool_name {
-            "convert_dng_to_webp" => {
-                let convert_args = serde_json::from_value(args)?;
-                self.handler.convert_dng_to_webp(convert_args).await
+        tracing::info!("Calling tool '{}' with arguments: {}", name, arguments);
+        
+        match self.handler.handle_tool_call(name, arguments).await {
+            Ok(result) => {
+                tracing::info!("Tool '{}' succeeded", name);
+                Ok(result)
             }
-            "check_converters" => {
-                let check_args = serde_json::from_value(args)?;
-                self.handler.check_converters(check_args).await
+            Err(e) => {
+                tracing::error!("Tool '{}' failed: {}", name, e);
+                Err(e)
             }
-            _ => Err(McpImageError::InvalidInput(format!(
-                "Unknown tool: {}",
-                tool_name
-            )))
         }
     }
 }

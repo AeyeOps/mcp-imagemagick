@@ -2,53 +2,51 @@
 
 An MCP (Model Context Protocol) server for image conversion using ImageMagick and darktable.
 
+## Overview
+
+This server provides tools for converting DNG (Digital Negative) RAW image files to WebP format using either ImageMagick or darktable as the conversion backend. The server implements the MCP protocol over stdio transport, making it compatible with MCP clients like Claude Desktop.
+
 ## Features
 
-- Convert DNG (Digital Negative) files to WebP format losslessly
-- Support for both ImageMagick 7 and darktable-cli converters
+- Convert DNG files to WebP format with lossless compression
 - Automatic converter selection based on availability
-- Full MCP protocol implementation with stdio transport
-- Detailed error reporting and logging
+- Fallback support between ImageMagick and darktable
+- Full MCP protocol implementation (version 2024-11-05)
+- Robust error handling and recovery
+- Detailed logging to stderr for debugging
 
 ## Prerequisites
 
 You need at least one of the following image converters installed:
 
 ### ImageMagick 7
-- Available as `convert7` or `magick` command
-- Install: `sudo apt install imagemagick` (Ubuntu/Debian)
-- Verify: `convert7 -version` or `magick -version`
+- Command: `convert7` or `magick`
+- Install on Ubuntu/Debian: `sudo apt install imagemagick`
+- Verify installation: `convert7 -version` or `magick -version`
 
 ### darktable-cli
 - Command-line interface for darktable RAW processor
-- Install: `sudo apt install darktable`
-- Verify: `darktable-cli --version`
+- Install on Ubuntu/Debian: `sudo apt install darktable`
+- Verify installation: `darktable-cli --version`
 
-## Installation
+## Building from Source
 
-### From Source
+1. Ensure you have Rust installed (https://rustup.rs/)
+2. Clone or download this repository
+3. Build the project:
 
 ```bash
-git clone https://github.com/yourusername/mcp-imagemagick
 cd mcp-imagemagick
 cargo build --release
 ```
 
 The binary will be available at `target/release/mcp-imagemagick`.
 
-### From crates.io (coming soon)
-
-```bash
-cargo install mcp-imagemagick
-```
-
 ## Usage
 
-### As an MCP Server
+### MCP Client Configuration
 
-This tool implements the MCP protocol and can be used with any MCP client like Claude Desktop.
-
-Add to your Claude Desktop configuration:
+Add the server to your MCP client configuration. For Claude Desktop, add to your settings:
 
 ```json
 {
@@ -65,19 +63,23 @@ Add to your Claude Desktop configuration:
 ### Available Tools
 
 #### convert_dng_to_webp
-Convert a DNG file to WebP format without loss.
 
-Parameters:
+Converts a DNG file to WebP format with lossless compression.
+
+**Parameters:**
 - `input_path` (string, required): Path to the DNG file
-- `output_path` (string, required): Path for the WebP output
-- `converter` (string, optional): Which converter to use ("auto", "imagemagick", "darktable")
+- `output_path` (string, required): Path for the WebP output file
+- `converter` (string, optional): Which converter to use
+  - `"auto"` (default): Automatically select the best available converter
+  - `"imagemagick"`: Use ImageMagick (requires `convert7` or `magick`)
+  - `"darktable"`: Use darktable-cli
 
-Example:
+**Example usage:**
 ```json
 {
   "tool": "convert_dng_to_webp",
   "arguments": {
-    "input_path": "/path/to/image.dng",
+    "input_path": "/path/to/photo.DNG",
     "output_path": "/path/to/output.webp",
     "converter": "auto"
   }
@@ -85,72 +87,85 @@ Example:
 ```
 
 #### check_converters
+
 Check which image converters are available on the system.
 
-No parameters required.
+**Parameters:** None required
+
+**Returns:** List of available converters and their status
 
 ## Technical Details
 
-### Conversion Methods
+### Converter Priority
 
-#### ImageMagick
-Uses the following settings for lossless WebP conversion:
-- `webp:lossless=true` - Enable lossless compression
+When using `"auto"` converter selection:
+1. **ImageMagick** (priority: 60) - Attempted first when available
+2. **darktable** (priority: 40) - Used as fallback or when specifically requested
+
+Note: ImageMagick may not support DNG files directly on all systems. The auto-converter will automatically fall back to darktable if ImageMagick fails.
+
+### Conversion Settings
+
+#### ImageMagick WebP settings:
+- `webp:lossless=true` - Lossless compression
 - `webp:exact=true` - Preserve exact pixel values
-- `webp:method=6` - Maximum compression
-- `webp:partition-limit=0` - Disable partition limit
+- `webp:method=6` - Maximum compression effort
+- `webp:partition-limit=0` - No partition limit
 
-#### darktable-cli
+#### darktable-cli:
 - Uses darktable's RAW processing pipeline
-- Better color management for RAW files
-- Automatically applies any XMP sidecar files
+- Automatically applies any XMP sidecar files if present
+- Provides accurate color management for RAW files
 
-### Priority System
+## Error Handling
 
-When using "auto" converter selection:
-1. ImageMagick (priority: 60) - Faster, good for quick conversions
-2. darktable (priority: 40) - Better RAW processing, more accurate colors
+The server includes comprehensive error handling:
+- Continues running even if individual conversions fail
+- Returns proper JSON-RPC error responses
+- Logs detailed error information to stderr
+- Automatically falls back to alternative converters when available
 
-## Development
+## Logging
 
-### Project Structure
+Control logging verbosity with the `RUST_LOG` environment variable:
+
+```bash
+# Show only errors
+RUST_LOG=error mcp-imagemagick
+
+# Show informational messages
+RUST_LOG=info mcp-imagemagick
+
+# Show detailed debug information
+RUST_LOG=debug mcp-imagemagick
+```
+
+## Testing
+
+Run the integration test:
+
+```bash
+cd mcp-imagemagick
+python3 test_mcp.py
+```
+
+## Project Structure
 
 ```
 mcp-imagemagick/
 ├── src/
-│   ├── main.rs           # Entry point
+│   ├── main.rs           # Entry point with panic handler
 │   ├── server.rs         # MCP server implementation
-│   ├── transport.rs      # Stdio transport
+│   ├── transport.rs      # Synchronous stdio transport
 │   ├── handlers/         # Request handlers
-│   └── converters/       # Image converter implementations
-├── kb/                   # Knowledge base documents
-└── docs/                 # Additional documentation
-```
-
-### Building
-
-```bash
-cargo build
-```
-
-### Testing
-
-```bash
-cargo test
-```
-
-### Logging
-
-Set the `RUST_LOG` environment variable to control logging:
-
-```bash
-RUST_LOG=debug mcp-imagemagick
-```
+│   │   └── image.rs      # Image conversion tools
+│   └── converters/       # Converter implementations
+│       ├── mod.rs        # Auto-converter with fallback
+│       ├── imagemagick.rs # ImageMagick converter
+│       └── darktable.rs  # darktable converter
+├── docs/                 # Additional documentation
+└── test_mcp.py          # Integration test
 
 ## License
 
 MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.

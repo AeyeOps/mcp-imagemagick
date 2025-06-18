@@ -55,16 +55,33 @@ impl AutoConverter {
 #[async_trait]
 impl ImageConverter for AutoConverter {
     async fn convert_dng_to_webp(&self, input: &Path, output: &Path) -> Result<()> {
+        let mut last_error = None;
+        
         for converter in &self.converters {
             if converter.is_available() {
-                tracing::info!("Using converter: {}", converter.name());
-                return converter.convert_dng_to_webp(input, output).await;
+                tracing::info!("Trying converter: {}", converter.name());
+                
+                match converter.convert_dng_to_webp(input, output).await {
+                    Ok(()) => {
+                        tracing::info!("Successfully converted with {}", converter.name());
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Converter {} failed: {}. Trying next converter...", converter.name(), e);
+                        last_error = Some(e);
+                        // Continue to next converter
+                    }
+                }
             }
         }
         
-        Err(crate::McpImageError::ConverterNotAvailable(
-            "No image converter available".to_string()
-        ))
+        // If we get here, either no converters were available or all failed
+        match last_error {
+            Some(e) => Err(e),
+            None => Err(crate::McpImageError::ConverterNotAvailable(
+                "No image converter available".to_string()
+            ))
+        }
     }
     
     fn is_available(&self) -> bool {

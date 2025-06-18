@@ -1,1 +1,32 @@
-/target
+# Rust
+target/
+Cargo.lock
+
+# Test outputs
+*.webp
+test_output/
+
+# Logs
+*.log
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

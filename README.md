@@ -6,6 +6,8 @@ An MCP (Model Context Protocol) server for image conversion using ImageMagick an
 
 This server provides tools for converting DNG (Digital Negative) RAW image files to WebP format using either ImageMagick or darktable as the conversion backend. The server implements the MCP protocol over stdio transport, making it compatible with MCP clients like Claude Desktop.
 
+This project serves as both a functional tool and a learning resource for those interested in creating MCP servers. While currently focused on DNG to WebP conversion, we plan to expand its capabilities over time to support more image formats and operations. We're publishing this as a starting point to share our MCP implementation approach and provide others with a working example to learn from.
+
 ## Features
 
 - Convert DNG files to WebP format with lossless compression

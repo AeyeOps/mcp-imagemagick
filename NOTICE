@@ -1,0 +1,36 @@
+mcp-imagemagick
+Copyright (c) 2024 mcp-imagemagick contributors
+
+This product uses the following third-party software:
+
+================================================================================
+ImageMagick
+================================================================================
+Copyright © 1999 ImageMagick Studio LLC, a non-profit organization
+dedicated to making software imaging solutions freely available.
+
+Licensed under the ImageMagick License.
+You may obtain a copy of the License at:
+https://imagemagick.org/script/license.php
+
+This project uses ImageMagick through its command-line interface for
+image conversion operations. No ImageMagick source code is included
+or distributed with this project.
+
+================================================================================
+darktable
+================================================================================
+Copyright © darktable developers
+
+Licensed under the GNU General Public License version 3 or later.
+You may obtain a copy of the License at:
+https://github.com/darktable-org/darktable/blob/master/LICENSE
+
+This project uses darktable-cli through its command-line interface for
+RAW image processing. No darktable source code is included or distributed
+with this project.
+
+================================================================================
+
+The mcp-imagemagick project itself is licensed under the MIT License.
+See the LICENSE file for details.

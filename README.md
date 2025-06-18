@@ -169,3 +169,21 @@ mcp-imagemagick/
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Third-Party Software
+
+This project uses the following third-party software:
+
+### ImageMagick
+- Copyright © 1999 ImageMagick Studio LLC
+- Licensed under the ImageMagick License
+- License: https://imagemagick.org/script/license.php
+- Used for image conversion operations
+
+### darktable
+- Copyright © darktable developers
+- Licensed under GPL 3.0 or later
+- License: https://github.com/darktable-org/darktable/blob/master/LICENSE
+- Used for RAW image processing
+
+Note: This project calls these tools via their command-line interfaces and does not distribute or incorporate their source code.
